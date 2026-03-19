@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "aeroblend-math",
+    "aeroblend-physics",
+    "aeroblend-importer",
+    "aeroblend-core",
+    "aeroblend-ffi",
+    "aeroblend-ballistics",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+glam = { version = "0.29", features = ["bytemuck"] }
+gltf = "1.4"
+regex = "1.11"
+cbindgen = "0.27"

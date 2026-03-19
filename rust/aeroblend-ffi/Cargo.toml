@@ -1,0 +1,19 @@
+[package]
+name = "aeroblend-ffi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "aeroblend_ffi"
+crate-type = ["staticlib"]
+
+[dependencies]
+aeroblend-math = { path = "../aeroblend-math" }
+aeroblend-physics = { path = "../aeroblend-physics" }
+aeroblend-importer = { path = "../aeroblend-importer" }
+aeroblend-ballistics = { path = "../aeroblend-ballistics" }
+aeroblend-core = { path = "../aeroblend-core" }
+glam.workspace = true
+
+[build-dependencies]
+cbindgen.workspace = true

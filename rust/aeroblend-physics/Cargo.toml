@@ -1,0 +1,8 @@
+[package]
+name = "aeroblend-physics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aeroblend-math = { path = "../aeroblend-math" }
+glam.workspace = true

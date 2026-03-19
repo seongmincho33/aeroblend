@@ -1,0 +1,11 @@
+[package]
+name = "aeroblend-importer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aeroblend-math = { path = "../aeroblend-math" }
+aeroblend-physics = { path = "../aeroblend-physics" }
+gltf.workspace = true
+regex.workspace = true
+glam.workspace = true

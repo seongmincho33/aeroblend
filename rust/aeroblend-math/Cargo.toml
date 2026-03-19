@@ -1,0 +1,7 @@
+[package]
+name = "aeroblend-math"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+glam.workspace = true
