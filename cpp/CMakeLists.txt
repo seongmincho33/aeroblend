@@ -47,6 +47,13 @@ if(APPLE)
     )
 endif()
 
+# Windows: Rust 런타임이 필요로 하는 시스템 라이브러리
+if(WIN32)
+    target_link_libraries(aeroblend PRIVATE
+        ws2_32 userenv ntdll bcrypt advapi32
+    )
+endif()
+
 # Copy shaders to build dir
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
@@ -84,5 +91,11 @@ if(APPLE)
     target_link_libraries(test_mouse_flight PRIVATE
         "-framework CoreFoundation"
         "-framework Security"
+    )
+endif()
+
+if(WIN32)
+    target_link_libraries(test_mouse_flight PRIVATE
+        ws2_32 userenv ntdll bcrypt advapi32
     )
 endif()
