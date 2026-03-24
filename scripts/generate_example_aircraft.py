@@ -37,13 +37,20 @@ bl_info = {
 
 import bpy
 import bmesh
-import fcntl
 import json
 import math
 import os
-import select
+import platform
 import subprocess
+import sys
 import tempfile
+import threading
+
+# Unix 전용 모듈 (Windows에서는 스레드 기반 읽기로 대체)
+_IS_WINDOWS = platform.system() == "Windows"
+if not _IS_WINDOWS:
+    import fcntl
+    import select
 from bpy.props import (
     EnumProperty,
     FloatProperty,
@@ -1079,12 +1086,77 @@ def _get_project_root(context):
 
 def _get_executable(project_root):
     """Return the path to the aeroblend executable."""
-    return os.path.join(project_root, "build", "cpp", "aeroblend")
+    name = "aeroblend.exe" if _IS_WINDOWS else "aeroblend"
+    return os.path.join(project_root, "build", "cpp", name)
 
 
 def _get_build_script(project_root):
     """Return the path to the build script."""
+    if _IS_WINDOWS:
+        return os.path.join(project_root, "build.bat")
     return os.path.join(project_root, "build.sh")
+
+
+def _get_build_command(build_script):
+    """Return the command list to run the build script."""
+    if _IS_WINDOWS:
+        return ["cmd", "/c", build_script]
+    return ["bash", build_script]
+
+
+def _setup_nonblocking_pipe(proc):
+    """Set up non-blocking reading from proc.stdout (cross-platform)."""
+    if _IS_WINDOWS:
+        # Windows: 백그라운드 스레드로 큐에 줄 단위 읽기
+        import queue
+        q = queue.Queue()
+
+        def _reader():
+            try:
+                for line in iter(proc.stdout.readline, ''):
+                    q.put(line)
+            except (ValueError, OSError):
+                pass
+            q.put(None)  # sentinel
+
+        t = threading.Thread(target=_reader, daemon=True)
+        t.start()
+        return q
+    else:
+        # Unix: fcntl non-blocking
+        fd = proc.stdout.fileno()
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        return None
+
+
+def _read_available_lines(proc, queue_obj):
+    """Read available lines without blocking (cross-platform)."""
+    lines = []
+    if _IS_WINDOWS:
+        import queue as queue_mod
+        while True:
+            try:
+                line = queue_obj.get_nowait()
+                if line is None:
+                    break
+                stripped = line.rstrip()
+                if stripped:
+                    lines.append(stripped)
+            except queue_mod.Empty:
+                break
+    else:
+        try:
+            while select.select([proc.stdout], [], [], 0)[0]:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                stripped = line.rstrip()
+                if stripped:
+                    lines.append(stripped)
+        except (IOError, OSError):
+            pass
+    return lines
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1261,6 +1333,7 @@ class _Status:
     error_detail = ""
     _process = None
     _timer = None
+    _queue = None
     _lines = []
     _glb_path = ""
     _root = ""
@@ -1329,7 +1402,7 @@ class AEROBLEND_OT_build(bpy.types.Operator):
 
         build_script = _get_build_script(root)
         if not os.path.isfile(build_script):
-            _Status.set_error("build.sh not found", build_script)
+            _Status.set_error("Build script not found", build_script)
             _force_panel_redraw()
             return {'CANCELLED'}
 
@@ -1343,16 +1416,13 @@ class AEROBLEND_OT_build(bpy.types.Operator):
         try:
             _Status._lines = []
             _Status._process = subprocess.Popen(
-                ["bash", build_script],
+                _get_build_command(build_script),
                 cwd=root,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-            # Set stdout to non-blocking so readline() won't freeze Blender
-            fd = _Status._process.stdout.fileno()
-            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-            fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            _Status._queue = _setup_nonblocking_pipe(_Status._process)
         except OSError as e:
             _Status.set_error("Failed to start build", str(e))
             _force_panel_redraw()
@@ -1371,18 +1441,11 @@ class AEROBLEND_OT_build(bpy.types.Operator):
         if proc is None:
             return {'CANCELLED'}
 
-        # Non-blocking read of output lines
-        try:
-            while select.select([proc.stdout], [], [], 0)[0]:
-                line = proc.stdout.readline()
-                if not line:
-                    break
-                stripped = line.rstrip()
-                if stripped:
-                    _Status._lines.append(stripped)
-                    _Status.message = stripped[-60:]
-        except (IOError, OSError):
-            pass
+        # Non-blocking read of output lines (cross-platform)
+        new_lines = _read_available_lines(proc, _Status._queue)
+        for ln in new_lines:
+            _Status._lines.append(ln)
+            _Status.message = ln[-60:]
         _force_panel_redraw()
 
         ret = proc.poll()
@@ -1494,7 +1557,7 @@ class AEROBLEND_OT_build_and_run(bpy.types.Operator):
 
         build_script = _get_build_script(root)
         if not os.path.isfile(build_script):
-            _Status.set_error("build.sh not found", build_script)
+            _Status.set_error("Build script not found", build_script)
             _force_panel_redraw()
             return {'CANCELLED'}
 
@@ -1522,15 +1585,13 @@ class AEROBLEND_OT_build_and_run(bpy.types.Operator):
         try:
             _Status._lines = []
             _Status._process = subprocess.Popen(
-                ["bash", build_script],
+                _get_build_command(build_script),
                 cwd=root,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-            fd = _Status._process.stdout.fileno()
-            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-            fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            _Status._queue = _setup_nonblocking_pipe(_Status._process)
         except OSError as e:
             _Status.set_error("Failed to start build", str(e))
             _force_panel_redraw()

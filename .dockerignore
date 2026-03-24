@@ -1,0 +1,9 @@
+build/
+rust/target/
+.git/
+.gitignore
+*.md
+references/
+Dockerfile
+docker-compose.yml
+.dockerignore

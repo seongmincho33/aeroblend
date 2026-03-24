@@ -1,0 +1,16 @@
+services:
+  aeroblend:
+    build: .
+    ports:
+      - "6080:6080"     # noVNC (브라우저 접속)
+    environment:
+      - DISPLAY=:99
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - GALLIUM_DRIVER=llvmpipe
+      - SDL_VIDEODRIVER=x11
+      - RESOLUTION=1280x720x24
+    volumes:
+      # 커스텀 모델 마운트 (선택)
+      - ./assets/models:/app/assets/models:ro
+    # 기본 모델로 실행, 변경하려면 아래 주석 해제
+    # command: ["--model", "/app/assets/models/my_aircraft.glb"]
